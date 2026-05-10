@@ -26,7 +26,8 @@ fi
 # ดึงข้อมูล tunnel
 # ------------------------------------------
 TUNNEL_ID=$(grep "^tunnel:" /etc/cloudflared/config.yml | awk '{print $2}' | tr -d '[:space:]')
-CRED_FILE=$(grep "^credentials-file:" /etc/cloudflared/config.yml | awk '{print $2}' | tr -d '[:space:]')
+# FIX: ใช้ cut -d' ' -f2- แทน awk '{print $2}' เพื่อรองรับ path ที่มี : และ / ได้ครบ
+CRED_FILE=$(grep "^credentials-file:" /etc/cloudflared/config.yml | cut -d' ' -f2- | tr -d '[:space:]')
 TUNNEL_NAME=$(cloudflared tunnel list | grep "$TUNNEL_ID" | awk '{print $2}')
 
 echo ""
