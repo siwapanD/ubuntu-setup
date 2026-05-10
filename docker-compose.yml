@@ -1,0 +1,45 @@
+services:
+
+  # ------------------------------------------
+  # Portainer — Container Management
+  # https://portainer.example.com
+  # ------------------------------------------
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+  # ------------------------------------------
+  # Uptime Kuma — Monitoring
+  # https://status.example.com
+  # ------------------------------------------
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+
+  # ------------------------------------------
+  # Dozzle — Log Viewer
+  # https://logs.example.com
+  # ------------------------------------------
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  portainer_data:
+  uptime_kuma_data:
