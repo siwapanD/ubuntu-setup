@@ -20,7 +20,7 @@ installs SSH, Docker, and essential dev tools in one command.
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/ubuntu-setup.git
+git clone https://github.com/siwapanD/ubuntu-setup.git
 cd ubuntu-setup
 
 # Make executable and run
