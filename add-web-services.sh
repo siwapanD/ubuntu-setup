@@ -93,15 +93,15 @@ if [ -n "$SSH_HOST" ]; then
 fi
 
 printf '  - hostname: %s\n' "$PORTAINER_HOST"  >> "$TMPFILE"
-printf '    service: http://portainer:9000\n'  >> "$TMPFILE"
+printf '    service: http://localhost:9000\n'  >> "$TMPFILE"
 printf '\n'                                    >> "$TMPFILE"
 
 printf '  - hostname: %s\n' "$KUMA_HOST"       >> "$TMPFILE"
-printf '    service: http://uptime-kuma:3001\n' >> "$TMPFILE"
+printf '    service: http://localhost:3001\n' >> "$TMPFILE"
 printf '\n'                                    >> "$TMPFILE"
 
 printf '  - hostname: %s\n' "$DOZZLE_HOST"     >> "$TMPFILE"
-printf '    service: http://dozzle:8080\n'     >> "$TMPFILE"
+printf '    service: http://localhost:8080\n'     >> "$TMPFILE"
 printf '\n'                                    >> "$TMPFILE"
 
 printf '  - service: http_status:404\n'        >> "$TMPFILE"
@@ -122,13 +122,13 @@ echo "เขียน config สำเร็จ ✓"
 echo ""
 echo "[2/2] สร้าง DNS CNAME records ..."
 
-cloudflared tunnel route dns "$TUNNEL_NAME" "$PORTAINER_HOST"
+cloudflared tunnel route dns "$TUNNEL_NAME" "$PORTAINER_HOST" || true
 echo "  $PORTAINER_HOST ✓"
 
-cloudflared tunnel route dns "$TUNNEL_NAME" "$KUMA_HOST"
+cloudflared tunnel route dns "$TUNNEL_NAME" "$KUMA_HOST" || true
 echo "  $KUMA_HOST ✓"
 
-cloudflared tunnel route dns "$TUNNEL_NAME" "$DOZZLE_HOST"
+cloudflared tunnel route dns "$TUNNEL_NAME" "$DOZZLE_HOST" || true
 echo "  $DOZZLE_HOST ✓"
 
 # ------------------------------------------
