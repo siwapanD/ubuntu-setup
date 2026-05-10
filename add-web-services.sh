@@ -74,24 +74,22 @@ SSH_HOST=$(grep -B1 "service: ssh" /etc/cloudflared/config.yml | grep "hostname:
 echo ""
 echo "[1/2] อัปเดต /etc/cloudflared/config.yml ..."
 
-sudo tee /etc/cloudflared/config.yml > /dev/null <<EOF
-tunnel: ${TUNNEL_ID}
+# สร้าง config ทั้งหมดในตัวแปรก่อน แล้วเขียนครั้งเดียว
+CONFIG="tunnel: ${TUNNEL_ID}
 credentials-file: ${CRED_FILE}
 
-ingress:
-EOF
+ingress:"
 
 # เพิ่ม SSH เดิม (ถ้ามี)
 if [ -n "$SSH_HOST" ]; then
-sudo tee -a /etc/cloudflared/config.yml > /dev/null <<EOF
+    CONFIG="${CONFIG}
   - hostname: ${SSH_HOST}
     service: ssh://localhost:22
-
-EOF
+"
 fi
 
 # เพิ่ม web services ใหม่
-sudo tee -a /etc/cloudflared/config.yml > /dev/null <<EOF
+CONFIG="${CONFIG}
   - hostname: ${PORTAINER_HOST}
     service: http://portainer:9000
 
@@ -101,8 +99,9 @@ sudo tee -a /etc/cloudflared/config.yml > /dev/null <<EOF
   - hostname: ${DOZZLE_HOST}
     service: http://dozzle:8080
 
-  - service: http_status:404
-EOF
+  - service: http_status:404"
+
+echo "$CONFIG" | sudo tee /etc/cloudflared/config.yml > /dev/null
 
 echo "Config อัปเดตแล้ว:"
 cat /etc/cloudflared/config.yml
