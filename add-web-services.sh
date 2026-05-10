@@ -34,7 +34,10 @@ TUNNEL_NAME=$(cloudflared tunnel list | grep "$TUNNEL_ID" | awk '{print $2}')
 
 # FIX: ใช้ awk '{print $NF}' แทน awk '{print $2}' สำหรับ hostname
 SSH_HOST=$(grep -B1 "service: ssh://localhost" /etc/cloudflared/config.yml \
-    | grep "hostname:" | awk '{print $NF}' | tr -d '[:space:]' || true)
+    | grep "hostname:" | sed 's/.*hostname:[[:space:]]*//' | tr -d '[:space:]' || true)
+if [ "$SSH_HOST" = "hostname:" ]; then
+    SSH_HOST=""
+fi
 
 echo ""
 echo "Tunnel ที่ใช้อยู่:"
