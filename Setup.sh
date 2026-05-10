@@ -10,6 +10,16 @@ echo " Ubuntu 24.04 VM Initial Setup"
 echo "=========================================="
 
 # ------------------------------------------
+# 0. SET HOSTNAME
+# ------------------------------------------
+echo ""
+echo "[0/8] Setting hostname ..."
+read -rp "Enter hostname for this server: " NEW_HOSTNAME
+sudo hostnamectl set-hostname "$NEW_HOSTNAME"
+sudo sed -i "s/127.0.1.1.*/127.0.1.1\t$NEW_HOSTNAME/" /etc/hosts
+echo "Hostname set to: $NEW_HOSTNAME"
+
+# ------------------------------------------
 # 1. UPDATE SYSTEM
 # ------------------------------------------
 echo ""
