@@ -31,16 +31,11 @@ echo "Tunnel ID: $TUNNEL_ID"
 echo ""
 
 # ------------------------------------------
-# ขอ Cloudflare credentials
+# โหลด Cloudflare credentials (auto จาก cloudflare.env)
 # ------------------------------------------
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " Cloudflare API Credentials"
-echo " (ดูได้ที่ https://dash.cloudflare.com/profile/api-tokens)"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-read -rp "Cloudflare Account ID: " CF_ACCOUNT_ID
-read -rsp "Cloudflare API Token : " CF_API_TOKEN
-echo ""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/cf-credentials.sh"
+load_cf_credentials
 
 # ------------------------------------------
 # ถามข้อมูล service ใหม่
