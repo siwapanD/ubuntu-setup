@@ -21,7 +21,7 @@ services:
   # https://portainer.example.com
   # ------------------------------------------
   portainer:
-    image: portainer/portainer-ce:latest
+    image: portainer/portainer-ee:lts
     container_name: portainer
     restart: unless-stopped
     ports:
