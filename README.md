@@ -58,6 +58,24 @@ docker compose version
 systemctl status ssh
 ```
 
+## 🌐 Outbound Proxy (`setup_proxy.sh`)
+
+Set or remove a system-wide outbound proxy in one command — covers shell, apt, Docker daemon (image pulls), Docker client (default env injected into new containers), and snap.
+
+```bash
+# Set proxy (tests connectivity first — aborts without changing anything if the proxy is unreachable)
+sudo bash setup_proxy.sh http://PROXY_IP:PORT
+
+# Custom NO_PROXY list (optional; defaults to localhost + private ranges)
+sudo bash setup_proxy.sh http://PROXY_IP:PORT "localhost,127.0.0.1,::1,10.0.0.0/8,192.168.0.0/16"
+
+# Remove everything / show current state
+sudo bash setup_proxy.sh unset
+sudo bash setup_proxy.sh status
+```
+
+Files touched: `/etc/environment`, `/etc/apt/apt.conf.d/95proxy`, `/etc/systemd/system/docker.service.d/http-proxy.conf`, `~/.docker/config.json` (`proxies`), snap proxy settings.
+
 ## 📋 Requirements
 
 - Ubuntu 24.04 LTS (fresh install recommended)
