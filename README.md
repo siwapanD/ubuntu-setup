@@ -92,3 +92,15 @@ Files touched: `/etc/environment`, `/etc/apt/apt.conf.d/95proxy`, `/etc/systemd/
 ## 📄 License
 
 MIT
+
+## 🐳 Docker + UFW Hairpin Gotcha
+
+UFW in this repo allows only SSH. A container that connects back to a port **published by Docker on the host itself** (e.g. `postgres` at `your-domain.com:55432` from another container) hits the host's INPUT chain and gets **dropped silently** (connection timeout) — even though the same port works fine from the internet (Docker's FORWARD path bypasses UFW).
+
+Fix — allow Docker subnets to the published port:
+
+```bash
+ufw allow from 172.16.0.0/12 to any port 55432 proto tcp comment "docker -> host published port"
+```
+
+Alternative (no firewall change): attach both containers to the same Docker network and use the **container name + internal port** as the host (e.g. `central-postgres:5432` instead of the domain).
