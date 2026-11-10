@@ -59,6 +59,24 @@ docker compose version
 systemctl status ssh
 ```
 
+## 🌐 Outbound Proxy (`setup_proxy.sh`)
+
+Set or remove a system-wide outbound proxy in one command — covers shell, apt, Docker daemon (image pulls), Docker client (default env injected into new containers), and snap.
+
+```bash
+# Set proxy (tests connectivity first — aborts without changing anything if the proxy is unreachable)
+sudo bash setup_proxy.sh http://PROXY_IP:PORT
+
+# Custom NO_PROXY list (optional; defaults to localhost + private ranges)
+sudo bash setup_proxy.sh http://PROXY_IP:PORT "localhost,127.0.0.1,::1,10.0.0.0/8,192.168.0.0/16"
+
+# Remove everything / show current state
+sudo bash setup_proxy.sh unset
+sudo bash setup_proxy.sh status
+```
+
+Files touched: `/etc/environment`, `/etc/apt/apt.conf.d/95proxy`, `/etc/systemd/system/docker.service.d/http-proxy.conf`, `~/.docker/config.json` (`proxies`), snap proxy settings.
+
 ## 📋 Requirements
 
 - Ubuntu 24.04 LTS (fresh install recommended)
@@ -75,3 +93,15 @@ systemctl status ssh
 ## 📄 License
 
 MIT
+
+## 🐳 Docker + UFW Hairpin Gotcha
+
+UFW in this repo allows only SSH. A container that connects back to a port **published by Docker on the host itself** (e.g. `postgres` at `your-domain.com:55432` from another container) hits the host's INPUT chain and gets **dropped silently** (connection timeout) — even though the same port works fine from the internet (Docker's FORWARD path bypasses UFW).
+
+Fix — allow Docker subnets to the published port:
+
+```bash
+ufw allow from 172.16.0.0/12 to any port 55432 proto tcp comment "docker -> host published port"
+```
+
+Alternative (no firewall change): attach both containers to the same Docker network and use the **container name + internal port** as the host (e.g. `central-postgres:5432` instead of the domain).
