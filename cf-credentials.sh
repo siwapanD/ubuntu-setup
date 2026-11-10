@@ -11,6 +11,9 @@ load_cf_credentials() {
     # 1. โหลดจาก .env ก่อน
     if [ -f "$ENV_FILE" ]; then
         source "$ENV_FILE"
+        # Ignore placeholders if the example file was copied as cloudflare.env.
+        [ "$CF_ACCOUNT_ID" = "xxxxxxxx" ] && CF_ACCOUNT_ID=""
+        [ "$CF_API_TOKEN" = "xxxxxxxx" ] && CF_API_TOKEN=""
     fi
 
     local SHOULD_SAVE=false

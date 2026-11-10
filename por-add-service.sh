@@ -125,15 +125,21 @@ echo "เลือก: $SEL_NAME (port $SEL_PORT)"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# ดึง base domain จาก config ที่มีอยู่
-EXISTING_HOST=$(curl -s \
-    -H "Authorization: Bearer $CF_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations" \
-    | jq -r '.result.config.ingress[0].hostname // ""' | sed 's/.*\.\(.*\..*\)/\1/')
+# ให้ระบุ base domain โดยตรง — ห้ามอนุมานจาก ingress แรก (เช่น ssh.example.com)
+# เพราะการตัด hostname ด้วย regex เคยทำให้ได้ base domain เป็น "ssh"
+read -rp "Base domain (เช่น example.com): " BASE_DOMAIN
+BASE_DOMAIN="${BASE_DOMAIN,,}"
+if ! [[ "$BASE_DOMAIN" =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$ ]]; then
+    echo "[ERROR] รูปแบบ base domain ไม่ถูกต้อง"
+    exit 1
+fi
 
-read -rp "Subdomain (จะใช้ .${EXISTING_HOST}): " SUBDOMAIN
-NEW_HOST="${SUBDOMAIN}.${EXISTING_HOST}"
+read -rp "Subdomain (จะใช้ .${BASE_DOMAIN}): " SUBDOMAIN
+if ! [[ "$SUBDOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]]; then
+    echo "[ERROR] Subdomain ต้องเป็น label เดียว เช่น myapp"
+    exit 1
+fi
+NEW_HOST="${SUBDOMAIN}.${BASE_DOMAIN}"
 SERVICE_URL="http://localhost:${SEL_PORT}"
 
 echo ""

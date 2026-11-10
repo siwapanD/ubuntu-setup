@@ -60,18 +60,67 @@ flowchart LR
 | **Uptime Kuma** | 3001 | ระบบ Monitor สำหรับเช็คสถานะว่า Container หรือเว็บต่างๆ ยังทำงานอยู่หรือไม่ (สามารถส่งแจ้งเตือนผ่าน Line/Discord ได้) |
 | **Dozzle** | 8080 | Web UI สำหรับดู Logs ของทุกๆ Docker Container แบบ Real-time ที่เบาและเร็ว |
 
-*(หมายเหตุ: ทุกบริการถูก Map พอร์ตผูกไว้กับ `127.0.0.1` เท่านั้น เครือข่ายภายนอกหรือวง LAN ภายในจะไม่สามารถเข้าตรงๆ ผ่าน IP เครื่องได้ ต้องเข้าผ่านโดเมน Cloudflare เท่านั้นตามคอนเซปต์ Zero Trust)*
+*(หมายเหตุ: ปัจจุบัน `docker-compose.yml` map พอร์ตไปยัง host ทุก interface ไม่ใช่เฉพาะ `127.0.0.1` ควรจำกัดการเข้าถึงด้วย UFW/Firewall ของระบบ หรือปรับ port binding เป็น `127.0.0.1:PORT:PORT` หากต้องการให้เข้าได้เฉพาะผ่าน Tunnel)*
 
 ---
 
-## 4. โครงสร้างไฟล์และสคริปต์ (Scripts & Automation)
+## 4. ติดตั้ง Cloudflare Tunnel ให้ SSH และ Web ใช้งานได้
+
+> ขั้นตอนนี้แยกจาก `setup.sh` ซึ่งเตรียม Ubuntu/Docker เท่านั้น ต้องมีโดเมนของตัวเองและ Cloudflare Zone ที่สถานะ **Active** ก่อน
+
+### เช็กลิสต์ตั้งค่าครั้งเดียว
+
+เตรียมก่อนเริ่ม (ถ้าทำครบแล้ว รันสคริปต์ได้เลย):
+
+- เพิ่มโดเมนใน Cloudflare และเปลี่ยน Nameserver จน Zone แสดง **Active**
+- สร้าง API Token ให้มีสิทธิ์ **Account: Cloudflare Tunnel Edit**, **Zone: Zone Read**, **Zone: DNS Read และ Edit**
+- รัน `setup.sh` บน Ubuntu ด้วย user ที่มี `sudo` เพื่อเตรียม SSH/Docker
+- Clone โปรเจกต์ไว้บน Ubuntu และอยู่ในโฟลเดอร์นั้น
+
+จากนั้นใช้คำสั่งเดียว (สคริปต์มี execute permission แล้ว):
+
+```bash
+./setup-cloudflare.sh
+```
+
+ครั้งแรกสคริปต์จะถาม Account ID, API Token, base domain และ Tunnel name; ตรวจ API token และ Zone ก่อนบันทึกค่าไว้ใน `cloudflare.env` permission `600`. ครั้งถัดไปกด Enter เพื่อใช้ค่าเดิม หรือกรอกค่าใหม่ได้ สคริปต์จะใช้ Tunnel เดิมที่ชื่อเดียวกัน ไม่สร้างซ้ำ, อัปเดต DNS CNAME ให้ชี้ Tunnel ปัจจุบัน, ตรวจ config ก่อนแทนที่ และเริ่ม Web containers + cloudflared ซ้ำได้อย่างปลอดภัย ถ้าขั้นตอนไหนล้มเหลว ให้อ่านข้อความ `[ERROR]`, แก้สิ่งที่ระบุ แล้วรันคำสั่งเดิมอีกครั้ง
+
+เมื่อสำเร็จ สคริปต์จะสร้าง Tunnel routes/DNS ดังนี้:
+
+| Hostname | ปลายทางในเครื่อง |
+| :--- | :--- |
+| `ssh.example.com` | `ssh://localhost:22` |
+| `portainer.example.com` | `http://localhost:9000` |
+| `status.example.com` | `http://localhost:3001` |
+| `logs.example.com` | `http://localhost:8080` |
+
+แทน `example.com` ด้วยโดเมนจริงของคุณ สคริปต์จะไม่ถอนหรือลบ Tunnel เดิม หากการตรวจสอบ Zone ล้มเหลว จะหยุดก่อนสร้าง Tunnel
+
+หลังสำเร็จ ให้ตรวจสถานะด้วย `sudo systemctl status cloudflared` และดู log ด้วย `sudo journalctl -u cloudflared -n 80 --no-pager` หาก DNS ชื่อใดมี record A/CNAME ที่ชนอยู่ สคริปต์จะแจ้งชื่อ host; แก้หรือลบ record นั้นใน Cloudflare Dashboard แล้วรัน `./setup-cloudflare.sh` ซ้ำได้
+
+### จำกัดผู้เข้าถึงด้วย Cloudflare Access
+
+การสร้าง Tunnel และ DNS ไม่ได้สร้าง Access Policy ให้โดยอัตโนมัติ ให้ไปที่ Cloudflare One → **Access → Applications** สร้าง Self-hosted Application สำหรับเว็บที่ต้องการป้องกัน และตั้ง Allow policy ตามอีเมล/ตัวตนที่อนุญาต สำหรับ SSH ผ่าน Access ให้ตั้งค่า SSH application/policy ตาม Cloudflare Zero Trust ด้วย อย่าเปิด Port 22 หรือ Web ports เป็น Public เพื่อข้าม Tunnel
+
+สำหรับ SSH client ให้ติดตั้ง `cloudflared` บนเครื่องลูกและเพิ่มใน `~/.ssh/config` (เปลี่ยนชื่อ host ให้ตรงโดเมนจริง):
+
+```text
+Host ssh.example.com
+    ProxyCommand cloudflared access ssh --hostname %h
+```
+
+จากนั้นเชื่อมต่อด้วย `ssh <ubuntu-user>@ssh.example.com` โดย `<ubuntu-user>` เป็นบัญชี Linux บนเซิร์ฟเวอร์
+
+> หมายเหตุ: Tunnel/DNS ถูกตั้งให้อัตโนมัติ แต่ Cloudflare Access Policy เป็นการตั้งค่าความปลอดภัยของบัญชีคุณ จึงต้องทำเองหนึ่งครั้งใน Dashboard ก่อนเชื่อมต่อจากภายนอก
+
+## 5. โครงสร้างไฟล์และสคริปต์ (Scripts & Automation)
 
 โปรเจกต์นี้มีสคริปต์ที่คอยช่วยเหลือในการติดตั้ง (Automation Scripts) ซึ่งช่วยลดขั้นตอนที่ซับซ้อน:
 
 - **`setup.sh`** 
   สคริปต์เริ่มต้นสำหรับเตรียมความพร้อม Ubuntu ติดตั้งเครื่องมือพื้นฐาน และติดตั้ง Docker + Docker Compose
 - **`setup-cloudflare.sh`**
-  ใช้ติดตั้ง `cloudflared` ทำการผูกบัญชีเข้ากับ Cloudflare, สร้าง Tunnel ใหม่ และเพิ่มกฎการเข้าถึง `SSH` เป็นอย่างแรก
+  ตรวจสอบโดเมนและ credentials, ติดตั้ง `cloudflared` ถ้ายังไม่มี, สร้างหรือใช้ Tunnel เดิม, ตั้ง SSH + Web routes/DNS และเริ่ม Containers กับ systemd service โดยรันซ้ำได้
 - **`add-web-services.sh`**
   ใช้สำหรับอ่านไฟล์ `docker-compose.yml` ลงในระบบ, รัน Container ขึ้นมา, อัปเดตไฟล์ `/etc/cloudflared/config.yml` เพื่อชี้โดเมน เช่น `portainer`, `status`, `logs` มายัง `localhost` พร้อมทั้งอัปเดต DNS CNAME บน Cloudflare ให้อัตโนมัติ
 - **`add-service.sh`**

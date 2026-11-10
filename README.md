@@ -23,12 +23,13 @@ installs SSH, Docker, and essential dev tools in one command.
 git clone https://github.com/siwapanD/ubuntu-setup.git
 cd ubuntu-setup
 
-# Make executable and run
-chmod +x setup.sh
-sudo bash setup.sh
+# Run the setup (scripts are already executable)
+./setup.sh
 ```
 
 > After the script finishes, **logout and login again** for the Docker group to take effect.
+>
+> Cloudflare Tunnel (SSH + web subdomains) is a separate one-time step. Follow the short checklist in [`docs/architecture-and-usage.md`](docs/architecture-and-usage.md#4-ติดตั้ง-cloudflare-tunnel-ให้-ssh-และ-web-ใช้งานได้). It checks the Cloudflare domain first, saves verified credentials, creates/updates DNS/routes, starts the web containers, and can be rerun later without creating duplicate tunnels.
 
 ## 📦 Installed Packages
 
