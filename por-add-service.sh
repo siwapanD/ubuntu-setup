@@ -33,7 +33,12 @@ load_cf_credentials
 # ------------------------------------------
 # ดึง Tunnel ID
 # ------------------------------------------
-TUNNEL_ID=$(grep "^tunnel:" /etc/cloudflared/config.yml | awk '{print $2}' | tr -d '[:space:]')
+TUNNEL_ID=$(sudo awk '$1 == "tunnel:" {print $2; exit}' /etc/cloudflared/config.yml | tr -d '[:space:]')
+if ! [[ "$TUNNEL_ID" =~ ^[a-fA-F0-9-]{36}$ ]]; then
+    echo "[ERROR] อ่าน Tunnel ID ไม่ได้จาก /etc/cloudflared/config.yml"
+    echo "        ตรวจสอบไฟล์และสิทธิ์ sudo แล้วลองใหม่"
+    exit 1
+fi
 echo ""
 echo "Tunnel ID: $TUNNEL_ID"
 
