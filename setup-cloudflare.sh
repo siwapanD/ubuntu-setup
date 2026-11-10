@@ -30,7 +30,7 @@ api_success() {
 }
 
 ensure_dns_route() {
-    local host="$1" target="$2" records record_id record_type record_content payload result
+    local host="$1" target="$2" records record_id record_content record_proxied payload result
     records=$(api_get "$API/zones/$ZONE_ID/dns_records?name=$host&per_page=100") || return 1
     api_success "$records" || { jq '.errors' <<< "$records" >&2; return 1; }
     local count
@@ -46,8 +46,9 @@ ensure_dns_route() {
         record_id=$(jq -r '.result[0].id' <<< "$records")
         record_type=$(jq -r '.result[0].type' <<< "$records")
         record_content=$(jq -r '.result[0].content' <<< "$records")
-        # Keep the existing record if it already points to this Tunnel; otherwise update it.
-        if [[ "${record_content,,}" == "${target,,}" ]]; then
+        record_proxied=$(jq -r '.result[0].proxied' <<< "$records")
+        # Keep the record only if it targets this Tunnel and is proxied by Cloudflare.
+        if [[ "${record_content,,}" == "${target,,}" && "$record_proxied" == "true" ]]; then
             return 0
         fi
         payload=$(jq -n --arg name "$host" --arg content "$target" \
@@ -218,7 +219,8 @@ sudo docker compose -f "$SCRIPT_DIR/docker-compose.yml" up -d || fail "เริ
 if ! sudo systemctl cat cloudflared >/dev/null 2>&1; then
     sudo cloudflared service install || fail "ติดตั้ง cloudflared systemd service ไม่สำเร็จ"
 fi
-sudo systemctl enable --now cloudflared || fail "เริ่ม cloudflared ไม่สำเร็จ — ตรวจด้วย: sudo journalctl -u cloudflared -n 80 --no-pager"
+sudo systemctl enable cloudflared || fail "ตั้ง cloudflared ให้เริ่มพร้อมระบบไม่สำเร็จ"
+sudo systemctl restart cloudflared || fail "เริ่ม cloudflared ใหม่ด้วย config ล่าสุดไม่สำเร็จ — ตรวจด้วย: sudo journalctl -u cloudflared -n 80 --no-pager"
 sudo systemctl --no-pager --full status cloudflared || true
 
 echo ""
