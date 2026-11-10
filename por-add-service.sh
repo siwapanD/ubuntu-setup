@@ -125,12 +125,37 @@ echo "เลือก: $SEL_NAME (port $SEL_PORT)"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# ให้ระบุ base domain โดยตรง — ห้ามอนุมานจาก ingress แรก (เช่น ssh.example.com)
-# เพราะการตัด hostname ด้วย regex เคยทำให้ได้ base domain เป็น "ssh"
-read -rp "Base domain (เช่น example.com): " BASE_DOMAIN
-BASE_DOMAIN="${BASE_DOMAIN,,}"
+# ใช้ base domain ที่ setup-cloudflare.sh บันทึกไว้; ถ้าเป็น config เก่าให้หาโดยดู SSH route
+BASE_DOMAIN="${CF_BASE_DOMAIN:-}"
+if [[ -z "$BASE_DOMAIN" ]]; then
+    CURRENT_CONFIG=$(curl -fsS \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations" || true)
+    if [[ -n "$CURRENT_CONFIG" ]] && jq -e '.success == true' >/dev/null 2>&1 <<< "$CURRENT_CONFIG"; then
+        BASE_DOMAIN=$(jq -r '[.result.config.ingress[] | .hostname // empty | select(startswith("ssh.")) | sub("^ssh\\."; "")] | first // empty' <<< "$CURRENT_CONFIG")
+    fi
+fi
+if [[ -z "$BASE_DOMAIN" ]]; then
+    # Compatibility: ขอเฉพาะเมื่อ config เก่าไม่มี CF_BASE_DOMAIN และไม่มี SSH hostname ให้หา
+    read -rp "Base domain (เช่น example.com): " BASE_DOMAIN
+    BASE_DOMAIN="${BASE_DOMAIN,,}"
+    if ! [[ "$BASE_DOMAIN" =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$ ]]; then
+        echo "[ERROR] รูปแบบ base domain ไม่ถูกต้อง"
+        exit 1
+    fi
+
+    TMP_ENV=$(mktemp)
+    sed '/^CF_BASE_DOMAIN=/d' "$ENV_FILE" > "$TMP_ENV"
+    printf '\nCF_BASE_DOMAIN=%q\n' "$BASE_DOMAIN" >> "$TMP_ENV"
+    chmod 600 "$TMP_ENV"
+    mv "$TMP_ENV" "$ENV_FILE"
+    echo "บันทึก base domain ไว้ใช้ครั้งต่อไปแล้ว"
+else
+    BASE_DOMAIN="${BASE_DOMAIN,,}"
+fi
 if ! [[ "$BASE_DOMAIN" =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$ ]]; then
-    echo "[ERROR] รูปแบบ base domain ไม่ถูกต้อง"
+    echo "[ERROR] CF_BASE_DOMAIN ใน cloudflare.env รูปแบบไม่ถูกต้อง กรุณาแก้เป็นโดเมน เช่น example.com"
     exit 1
 fi
 
