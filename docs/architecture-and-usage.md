@@ -124,7 +124,7 @@ Host ssh.example.com
 - **`add-web-services.sh`**
   ใช้สำหรับอ่านไฟล์ `docker-compose.yml` ลงในระบบ, รัน Container ขึ้นมา, อัปเดตไฟล์ `/etc/cloudflared/config.yml` เพื่อชี้โดเมน เช่น `portainer`, `status`, `logs` มายัง `localhost` พร้อมทั้งอัปเดต DNS CNAME บน Cloudflare ให้อัตโนมัติ
 - **`add-service.sh`**
-  สคริปต์รายย่อยสำหรับเพิ่ม web route จาก container ที่พบใน Portainer โดยอัปเดต Cloudflare API, DNS และ local `/etc/cloudflared/config.yml` จากนั้น restart `cloudflared` เพื่อให้ connector ใช้ route ใหม่ทันที
+  สคริปต์เพิ่ม web route จาก container ใน Portainer โดยอัปเดต Cloudflare API, DNS และ local `/etc/cloudflared/config.yml` แล้ว restart `cloudflared`; ใช้ `./por-add-service.sh --sync` เพื่อซิงก์ routes เดิมทั้งหมดกลับเข้า local config โดยไม่ต้องล็อกอิน Portainer
 - **`docker-compose.yml`**
   ไฟล์หัวใจหลักสำหรับการตั้งค่า Docker มีการประกาศ Image, Volumes และการผูก Port สำหรับบริการพื้นฐาน
 

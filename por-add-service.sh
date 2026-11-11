@@ -42,6 +42,52 @@ fi
 echo ""
 echo "Tunnel ID: $TUNNEL_ID"
 
+# Repair/sync all existing Cloudflare ingress routes without going through Portainer.
+if [[ "${1:-}" == "--sync" ]]; then
+    echo "กำลังดึง routes ทั้งหมดจาก Cloudflare เพื่อ sync กับ local cloudflared ..."
+    CURRENT=$(curl -fsS \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations") || {
+        echo "[ERROR] ดึง Tunnel config จาก Cloudflare ไม่สำเร็จ"
+        exit 1
+    }
+    if ! jq -e '.success == true and (.result.config.ingress | type == "array")' >/dev/null 2>&1 <<< "$CURRENT"; then
+        echo "[ERROR] Cloudflare API ไม่ได้ส่ง ingress config ที่ถูกต้อง:"
+        jq '.errors' <<< "$CURRENT"
+        exit 1
+    fi
+
+    LOCAL_CONFIG=/etc/cloudflared/config.yml
+    LOCAL_CONFIG_TMP=$(mktemp)
+    if ! sudo awk '/^ingress:/ { exit } { print }' "$LOCAL_CONFIG" > "$LOCAL_CONFIG_TMP"; then
+        rm -f "$LOCAL_CONFIG_TMP"
+        echo "[ERROR] อ่านส่วน Tunnel credentials จาก local config ไม่ได้"
+        exit 1
+    fi
+    printf '\ningress:\n' >> "$LOCAL_CONFIG_TMP"
+    if ! jq -r '.result.config.ingress[] | if .hostname then "  - hostname: \(.hostname)\n    service: \(.service)" else "  - service: \(.service)" end' \
+        <<< "$CURRENT" >> "$LOCAL_CONFIG_TMP"; then
+        rm -f "$LOCAL_CONFIG_TMP"
+        echo "[ERROR] สร้าง local ingress config ไม่สำเร็จ"
+        exit 1
+    fi
+    if ! cloudflared tunnel --config "$LOCAL_CONFIG_TMP" ingress validate; then
+        rm -f "$LOCAL_CONFIG_TMP"
+        echo "[ERROR] local ingress config ไม่ผ่าน validation; config เดิมยังไม่ถูกเปลี่ยน"
+        exit 1
+    fi
+    sudo install -m 600 "$LOCAL_CONFIG_TMP" "$LOCAL_CONFIG"
+    rm -f "$LOCAL_CONFIG_TMP"
+    sudo systemctl restart cloudflared || {
+        echo "[ERROR] sync config แล้ว แต่ restart cloudflared ไม่สำเร็จ"
+        echo "ตรวจ log: sudo journalctl -u cloudflared -n 80 --no-pager"
+        exit 1
+    }
+    echo "Sync routes สำเร็จ; cloudflared ถูก restart แล้ว"
+    exit 0
+fi
+
 # ------------------------------------------
 # Login Portainer และดึง container list
 # ------------------------------------------
