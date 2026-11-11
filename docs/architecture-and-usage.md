@@ -90,11 +90,24 @@ flowchart LR
 | Hostname | ปลายทางในเครื่อง |
 | :--- | :--- |
 | `ssh.example.com` | `ssh://localhost:22` |
+| `condb.example.com` | `tcp://localhost:55432` |
 | `portainer.example.com` | `http://localhost:9000` |
 | `status.example.com` | `http://localhost:3001` |
 | `logs.example.com` | `http://localhost:8080` |
 
 แทน `example.com` ด้วยโดเมนจริงของคุณ สคริปต์จะไม่ถอนหรือลบ Tunnel เดิม หากการตรวจสอบ Zone ล้มเหลว จะหยุดก่อนสร้าง Tunnel
+
+### เชื่อมต่อ PostgreSQL ผ่าน Cloudflare Access
+
+Route `condb.example.com` ส่ง TCP ไปยัง PostgreSQL ที่เครื่องเซิร์ฟเวอร์ `localhost:55432` ไม่ใช่ HTTP จึงใช้ browser หรือใส่ hostname นี้ใน connection string โดยตรงไม่ได้ ต้องติดตั้ง `cloudflared` บนเครื่องลูก และเปิด tunnel client:
+
+```bash
+cloudflared access tcp --hostname condb.example.com --url localhost:5432
+```
+
+คง process นี้ไว้ แล้วให้ PostgreSQL client เช่น `psql`/BeaverDB เชื่อมต่อ `localhost:5432` โดยตั้ง Cloudflare Access Application/Allow policy สำหรับ `condb.example.com` ก่อนใช้งาน ทั้งนี้ Tunnel TCP ใช้ WebSocket และอาจไม่เหมาะกับ connection ที่ต้องอยู่ยาวหรือใช้งานระดับ production; พิจารณา Cloudflare Client-to-Tunnel สำหรับกรณีนั้น
+
+> วิธีนี้เป็นทางเลือกผ่าน Cloudflare Tunnel เท่านั้น หากใช้ Nginx Proxy Manager TCP Stream สำหรับ `condb.itmwu.com:5432` ให้ทำตามหัวข้อด้านล่างแยกต่างหาก (ใช้ DNS-only และจำกัด public port ด้วย firewall)
 
 หลังสำเร็จ ให้ตรวจสถานะด้วย `sudo systemctl status cloudflared` และดู log ด้วย `sudo journalctl -u cloudflared -n 80 --no-pager` หาก DNS ชื่อใดมี record A/CNAME ที่ชนอยู่ สคริปต์จะแจ้งชื่อ host; แก้หรือลบ record นั้นใน Cloudflare Dashboard แล้วรัน `./setup-cloudflare.sh` ซ้ำได้
 
@@ -113,6 +126,17 @@ Host ssh.example.com
 
 > หมายเหตุ: Tunnel/DNS ถูกตั้งให้อัตโนมัติ แต่ Cloudflare Access Policy เป็นการตั้งค่าความปลอดภัยของบัญชีคุณ จึงต้องทำเองหนึ่งครั้งใน Dashboard ก่อนเชื่อมต่อจากภายนอก
 
+## PostgreSQL ผ่าน Cloudflare Tunnel TCP และ Nginx Proxy Manager TCP Stream
+
+หากต้องการให้ BeaverDB เชื่อมต่อ `condb.itmwu.com:5432` โดยใช้ NPM รับ public TCP แล้วส่งต่อไปยัง private-tunnel listener บน Ubuntu host ให้ตั้งค่า Stream ดังนี้:
+
+- เปิด TCP port `5432` ใน service `nginx-proxy-manager` ของ `docker-compose.yml` และให้ Docker resolve `host.docker.internal` เป็น host gateway
+- ใน NPM ไปที่ **Streams → Add Stream**: Incoming Port `5432`, Forward Hostname/IP `host.docker.internal`, Forward Port `55432`, Protocol `TCP`
+- ให้ private tunnel listener ทำงานที่ host port `55432` และตรวจว่าเข้าถึงได้จาก Docker host/NPM
+- ตั้ง DNS `condb.itmwu.com` เป็น Public IP ของเซิร์ฟเวอร์โดยเลือก Cloudflare **DNS only** (ไม่ใช่ proxied/orange cloud)
+
+จากนั้น BeaverDB ใช้ host `condb.itmwu.com` และ port `5432` ได้ตามปกติ (ไม่ใช่ HTTP Proxy Host) การตั้งค่านี้เปิด PostgreSQL สู่ public internet: จำกัด inbound `5432` ด้วย firewall/cloud firewall ตาม IP ที่อนุญาต, เปิดใช้ PostgreSQL TLS และใช้ credentials ที่รัดกุม ห้ามเปิด listener ส่วนตัว `55432` จากอินเทอร์เน็ต
+
 ## 5. โครงสร้างไฟล์และสคริปต์ (Scripts & Automation)
 
 โปรเจกต์นี้มีสคริปต์ที่คอยช่วยเหลือในการติดตั้ง (Automation Scripts) ซึ่งช่วยลดขั้นตอนที่ซับซ้อน:
@@ -120,11 +144,13 @@ Host ssh.example.com
 - **`setup.sh`** 
   สคริปต์เริ่มต้นสำหรับเตรียมความพร้อม Ubuntu ติดตั้งเครื่องมือพื้นฐาน และติดตั้ง Docker + Docker Compose
 - **`setup-cloudflare.sh`**
-  ตรวจสอบโดเมนและ credentials, ติดตั้ง `cloudflared` ถ้ายังไม่มี, สร้างหรือใช้ Tunnel เดิม, ตั้ง SSH + Web routes/DNS และเริ่ม Containers กับ systemd service โดยรันซ้ำได้
+  ตรวจสอบโดเมนและ credentials, ติดตั้ง `cloudflared` ถ้ายังไม่มี, สร้างหรือใช้ Tunnel เดิม, ตั้ง SSH + PostgreSQL TCP + Web routes/DNS และเริ่ม Containers กับ systemd service โดยรันซ้ำได้
 - **`add-web-services.sh`**
   ใช้สำหรับอ่านไฟล์ `docker-compose.yml` ลงในระบบ, รัน Container ขึ้นมา, อัปเดตไฟล์ `/etc/cloudflared/config.yml` เพื่อชี้โดเมน เช่น `portainer`, `status`, `logs` มายัง `localhost` พร้อมทั้งอัปเดต DNS CNAME บน Cloudflare ให้อัตโนมัติ
 - **`add-service.sh`**
-  สคริปต์เพิ่ม web route จาก container ใน Portainer โดยอัปเดต Cloudflare API, DNS และ local `/etc/cloudflared/config.yml` แล้ว restart `cloudflared`; ใช้ `./por-add-service.sh --sync` เพื่อซิงก์ routes เดิมทั้งหมดกลับเข้า local config โดยไม่ต้องล็อกอิน Portainer
+  สคริปต์เพิ่ม HTTP หรือ TCP route โดยกำหนด hostname และ port จากนั้นอัปเดต Cloudflare API และ DNS
+- **`por-add-service.sh`**
+  เลือก container จาก Portainer แล้วเพิ่ม HTTP หรือ TCP route โดยซิงก์ Cloudflare API กับ local `/etc/cloudflared/config.yml` และ restart `cloudflared`; ใช้ `./por-add-service.sh --sync` เพื่อซิงก์ routes เดิมทั้งหมดกลับเข้า local config โดยไม่ต้องล็อกอิน Portainer
 - **`docker-compose.yml`**
   ไฟล์หัวใจหลักสำหรับการตั้งค่า Docker มีการประกาศ Image, Volumes และการผูก Port สำหรับบริการพื้นฐาน
 

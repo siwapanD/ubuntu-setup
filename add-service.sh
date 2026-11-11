@@ -52,8 +52,16 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 read -rp "Hostname (เช่น myapp.beeempire.studio): " NEW_HOST
 read -rp "Container port (เช่น 3000): " PORT
-
-SERVICE_URL="http://localhost:${PORT}"
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
+    echo "[ERROR] Port ต้องเป็นตัวเลขระหว่าง 1-65535"
+    exit 1
+fi
+read -rp "Protocol [1=HTTP, 2=TCP] (default 1): " PROTOCOL_CHOICE
+case "${PROTOCOL_CHOICE:-1}" in
+    1) SERVICE_URL="http://localhost:${PORT}" ;;
+    2) SERVICE_URL="tcp://localhost:${PORT}" ;;
+    *) echo "[ERROR] เลือก protocol ไม่ถูกต้อง"; exit 1 ;;
+esac
 
 echo ""
 echo "จะเพิ่ม:  $NEW_HOST  →  $SERVICE_URL"
@@ -138,7 +146,11 @@ echo "=========================================="
 echo " DONE"
 echo "=========================================="
 echo ""
-echo "  https://$NEW_HOST  →  $SERVICE_URL"
+echo "  $NEW_HOST  →  $SERVICE_URL"
+if [[ "$SERVICE_URL" == tcp://* ]]; then
+    echo "  Client: cloudflared access tcp --hostname $NEW_HOST --url localhost:$PORT"
+    echo "  ตั้ง PostgreSQL/แอป client ให้เชื่อม localhost:$PORT และกำหนด Access Application/Policy ใน Cloudflare ก่อนใช้งาน"
+fi
 echo ""
 echo "Routes ทั้งหมดตอนนี้:"
 echo "$NEW_INGRESS" | jq -r '.[] | select(.hostname) | "  - \(.hostname) → \(.service)"'

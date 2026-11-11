@@ -139,6 +139,7 @@ mv "$TMP_ENV" "$ENV_FILE"
 trap - EXIT
 echo "บันทึกค่าที่ตรวจสอบแล้วใน $ENV_FILE (permission 600)"
 SSH_HOSTNAME="ssh.$BASE_DOMAIN"
+POSTGRES_HOSTNAME="condb.$BASE_DOMAIN"
 PORTAINER_HOST="portainer.$BASE_DOMAIN"
 KUMA_HOST="status.$BASE_DOMAIN"
 DOZZLE_HOST="logs.$BASE_DOMAIN"
@@ -147,6 +148,7 @@ cat <<EOF
 
 จะตั้งค่า routes/DNS ดังนี้:
   $SSH_HOSTNAME      -> ssh://localhost:22
+  $POSTGRES_HOSTNAME -> tcp://localhost:55432
   $PORTAINER_HOST -> http://localhost:9000
   $KUMA_HOST    -> http://localhost:3001
   $DOZZLE_HOST     -> http://localhost:8080
@@ -180,6 +182,11 @@ fi
 CRED_FILE="$HOME/.cloudflared/${TUNNEL_ID}.json"
 [[ -f "$CRED_FILE" ]] || fail "ไม่พบ credentials file: $CRED_FILE — ตรวจสอบว่า Tunnel ถูกสร้างโดยบัญชี Cloudflare ที่ login อยู่"
 
+# Check that the PostgreSQL TCP origin is reachable before adding its Tunnel route.
+if ! timeout 2 bash -c ':</dev/tcp/127.0.0.1/55432' 2>/dev/null; then
+    fail "PostgreSQL listener ไม่ตอบที่ localhost:55432 — เริ่ม/ตรวจ private TCP listener ก่อน แล้วจึงรัน setup อีกครั้ง"
+fi
+
 # Validate a temporary config first, keeping the active config intact on validation errors.
 CONFIG_TMP=$(mktemp)
 trap 'rm -f "$CONFIG_TMP"' EXIT
@@ -190,6 +197,8 @@ credentials-file: ${CRED_FILE}
 ingress:
   - hostname: ${SSH_HOSTNAME}
     service: ssh://localhost:22
+  - hostname: ${POSTGRES_HOSTNAME}
+    service: tcp://localhost:55432
   - hostname: ${PORTAINER_HOST}
     service: http://localhost:9000
   - hostname: ${KUMA_HOST}
@@ -205,7 +214,7 @@ trap - EXIT
 
 # Create/update DNS CNAME records via API. Re-running this is safe and updates old tunnel targets.
 echo "[3/4] สร้าง/ตรวจสอบ DNS records ..."
-for HOST in "$SSH_HOSTNAME" "$PORTAINER_HOST" "$KUMA_HOST" "$DOZZLE_HOST"; do
+for HOST in "$SSH_HOSTNAME" "$POSTGRES_HOSTNAME" "$PORTAINER_HOST" "$KUMA_HOST" "$DOZZLE_HOST"; do
     if ! ensure_dns_route "$HOST" "${TUNNEL_ID}.cfargotunnel.com"; then
         echo "[ERROR] ตั้ง DNS ไม่สำเร็จสำหรับ $HOST — ตรวจสิทธิ์ Zone:DNS Edit และแก้ record ที่ชน จากนั้นรันซ้ำได้" >&2
         exit 1
@@ -228,10 +237,12 @@ echo "=========================================="
 echo " CLOUDFLARE TUNNEL SETUP COMPLETE"
 echo "=========================================="
 echo "Tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
-echo "Routes: $SSH_HOSTNAME, $PORTAINER_HOST, $KUMA_HOST, $DOZZLE_HOST"
+echo "Routes: $SSH_HOSTNAME, $POSTGRES_HOSTNAME, $PORTAINER_HOST, $KUMA_HOST, $DOZZLE_HOST"
 echo ""
 echo "Web containers เริ่มแล้วจาก docker-compose.yml"
-echo "ขั้นตอนถัดไปที่ต้องทำเองเพียงครั้งเดียว: ตั้ง Cloudflare Access Policy เพื่อจำกัดผู้ใช้ SSH/Web ตามต้องการ"
+echo "ขั้นตอนถัดไปที่ต้องทำเองเพียงครั้งเดียว: ตั้ง Cloudflare Access Policy สำหรับ SSH/Web/PostgreSQL ตามต้องการ"
 echo "SSH client ต้องติดตั้ง cloudflared และเพิ่มใน ~/.ssh/config:"
 printf 'Host %s\n    ProxyCommand cloudflared access ssh --hostname %%h\n' "$SSH_HOSTNAME"
 echo "จากนั้นเชื่อมต่อ: ssh <ubuntu-user>@$SSH_HOSTNAME"
+echo "PostgreSQL: cloudflared access tcp --hostname $POSTGRES_HOSTNAME --url localhost:5432"
+echo "แล้วให้ PostgreSQL client ต่อไปที่ localhost:5432 (ต้องตั้ง Access Application/Policy สำหรับ $POSTGRES_HOSTNAME)"

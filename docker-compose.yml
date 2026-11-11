@@ -12,6 +12,9 @@ services:
       - "80:80"      # HTTP
       - "443:443"    # HTTPS
       - "81:81"      # Admin UI
+      - "5432:5432"  # PostgreSQL TCP Stream
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - npm_data:/data
       - npm_letsencrypt:/etc/letsencrypt

@@ -94,6 +94,21 @@ Files touched: `/etc/environment`, `/etc/apt/apt.conf.d/95proxy`, `/etc/systemd/
 
 MIT
 
+## 🗄️ Nginx Proxy Manager TCP Stream for PostgreSQL
+
+To expose PostgreSQL at `condb.itmwu.com:5432` through Nginx Proxy Manager (NPM), publish TCP port 5432 on the NPM container and configure an NPM **Stream**:
+
+- **Incoming Port:** `5432`
+- **Forward Host:** `host.docker.internal`
+- **Forward Port:** `55432`
+- **Protocol:** TCP
+
+The Compose configuration maps `host.docker.internal` to the Docker host gateway, so this upstream is expected to be the PostgreSQL listener on the Ubuntu host at port `55432`. Make sure that listener is running and reachable from Docker before using the stream. Do not use an NPM HTTP Proxy Host for PostgreSQL. Alternatively, the setup script can create `condb.<base-domain>` as a Cloudflare Tunnel TCP route; that path requires client-side `cloudflared access tcp` and is separate from this public NPM stream.
+
+Set `condb.itmwu.com` to the server's public IP with Cloudflare proxy **DNS only** (gray cloud), since standard Cloudflare proxying does not carry arbitrary PostgreSQL TCP on port 5432. Then connect with BeaverDB using `condb.itmwu.com:5432`.
+
+**Security:** this publishes PostgreSQL to the public internet. Restrict inbound TCP/5432 to trusted client IPs in the server/cloud firewall where possible, and require PostgreSQL TLS plus strong database credentials. Do not expose the host's PostgreSQL origin port 55432 publicly; allow it only from the Docker host/network as appropriate.
+
 ## 🐳 Docker + UFW Hairpin Gotcha
 
 UFW in this repo allows only SSH. A container that connects back to a port **published by Docker on the host itself** (e.g. `postgres` at `your-domain.com:55432` from another container) hits the host's INPUT chain and gets **dropped silently** (connection timeout) — even though the same port works fine from the internet (Docker's FORWARD path bypasses UFW).

@@ -216,10 +216,15 @@ if ! [[ "$SUBDOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]]; then
     exit 1
 fi
 NEW_HOST="${SUBDOMAIN}.${BASE_DOMAIN}"
-SERVICE_URL="http://localhost:${SEL_PORT}"
+read -rp "Protocol [1=HTTP, 2=TCP] (default 1): " PROTOCOL_CHOICE
+case "${PROTOCOL_CHOICE:-1}" in
+    1) SERVICE_URL="http://localhost:${SEL_PORT}" ;;
+    2) SERVICE_URL="tcp://localhost:${SEL_PORT}" ;;
+    *) echo "[ERROR] เลือก protocol ไม่ถูกต้อง"; exit 1 ;;
+esac
 
 echo ""
-echo "จะเพิ่ม:  https://$NEW_HOST  →  $SERVICE_URL  ($SEL_NAME)"
+echo "จะเพิ่ม:  $NEW_HOST  →  $SERVICE_URL  ($SEL_NAME)"
 echo ""
 read -rp "ยืนยัน? (y/n): " CONFIRM
 if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
@@ -324,7 +329,11 @@ echo "=========================================="
 echo ""
 echo "  Container : $SEL_NAME"
 echo "  Port      : $SEL_PORT"
-echo "  URL       : https://$NEW_HOST"
+echo "  Route     : $NEW_HOST → $SERVICE_URL"
+if [[ "$SERVICE_URL" == tcp://* ]]; then
+    echo "  Client    : cloudflared access tcp --hostname $NEW_HOST --url localhost:$SEL_PORT"
+    echo "  ให้ PostgreSQL/แอป client เชื่อม localhost:$SEL_PORT และตั้ง Cloudflare Access Application/Policy ก่อนใช้งาน"
+fi
 echo ""
 echo "Routes ทั้งหมดตอนนี้:"
 echo "$FINAL_INGRESS" | jq -r '.[] | select(.hostname) | "  - \(.hostname) → \(.service)"'
