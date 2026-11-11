@@ -1,0 +1,48 @@
+# Changelog / Incident Log
+
+## 2026-11-11 — Cloudflare Tunnel custom hostnames
+
+### อาการ
+
+- `por-add-service.sh` เพิ่ม hostname และ DNS แล้ว แต่ hostname ที่เพิ่มเอง เช่น `ctrl.itmwu.com` และ `condb.itmwu.com` เปิดจากภายนอกแล้วได้ HTTP 404
+- หลัง sync routes แล้ว `ctrl.itmwu.com` ใช้งานได้ (HTTP 200) แต่ `condb.itmwu.com` ได้ HTTP 502
+- ระหว่างตรวจ API เคยพบ error 1030 เรื่อง UUID parsing ทั้งที่ Account ID และ Tunnel ID ที่อยู่ใน `cloudflare.env`/config มีรูปแบบถูกต้อง
+
+### สาเหตุที่ยืนยันได้
+
+1. **Tunnel ID ว่างใน `por-add-service.sh`** — `/etc/cloudflared/config.yml` เป็นไฟล์ `root:root` permission `600` แต่สคริปต์เดิมอ่านด้วย `grep` ใน user ปกติ จึงอ่านค่า `tunnel:` ไม่ได้และส่ง API path ที่ขาด Tunnel ID ทำให้ Cloudflare parse path ส่วนถัดไปเป็น UUID แล้วตอบ error 1030
+2. **Local ingress ไม่ตรงกับ Cloudflare API** — `por-add-service.sh` เดิมแก้ ingress ผ่าน Cloudflare API และสร้าง DNS เท่านั้น แต่ systemd `cloudflared` บนเซิร์ฟเวอร์รันด้วย `--config /etc/cloudflared/config.yml` ซึ่งเป็น local config การเพิ่ม route ใน API อย่างเดียวจึงไม่ทำให้ connector ที่ใช้ local config รู้จัก hostname ใหม่ และตอบ 404
+3. **`condb.itmwu.com` ชี้ไป PostgreSQL** — route ปัจจุบันชี้ `http://localhost:55432`; `central-postgres` เป็นฐานข้อมูล PostgreSQL ไม่ใช่ HTTP web server การทดสอบ HTTP จึงได้ 502/empty reply ตามคาด ไม่ใช่หน้าเว็บที่ browser จะแสดงได้
+
+### การแก้ไขที่ทำ
+
+- อ่าน Tunnel ID ผ่าน `sudo awk` และตรวจ UUID ก่อนประกอบ API URL
+- เพิ่ม `./por-add-service.sh --sync` เพื่อดึง ingress ทั้งหมดจาก Cloudflare API, เขียน ingress ลง local `/etc/cloudflared/config.yml`, validate config และ restart `cloudflared`
+- โหมดเพิ่ม service ปกติ sync ingress ทั้งชุดหลังแก้ API/DNS เช่นกัน เพื่อให้ Cloudflare API กับ local config ตรงกัน
+- ตรวจยืนยันบนเซิร์ฟเวอร์: commit `b4fa0aa` ถูก pull แล้ว; `ctrl.itmwu.com` ตอบ HTTP 200 หลัง sync
+
+### วิธีแก้/ใช้งานต่อ
+
+**ซิงก์ routes ที่อยู่ใน Cloudflare API ไปยัง local connector:**
+
+```bash
+cd ~/dev/infra/ubuntu-setup
+git pull --ff-only origin main
+./por-add-service.sh --sync
+```
+
+เมื่อถามรหัสผ่าน ให้กรอกรหัส `sudo` ที่เครื่องเซิร์ฟเวอร์ จากนั้นตรวจ:
+
+```bash
+curl -I https://ctrl.itmwu.com
+```
+
+คาดหวัง HTTP 200 (หรือสถานะตอบกลับจากแอป/Access ตาม policy) สำหรับ route ที่ชี้ไปยัง HTTP service ที่ทำงานอยู่
+
+**สำหรับ PostgreSQL (`condb`)**: อย่าทดสอบด้วย browser/`curl https://condb.itmwu.com` เพราะเป็น TCP database ไม่ใช่ HTTP ให้เชื่อมต่อ PostgreSQL ด้วย client เช่น `psql` ผ่าน Cloudflare Access TCP (`cloudflared access tcp`) และตั้ง Access application/policy กับ local client port ให้เหมาะสม หรือเอา route นี้ออกหากไม่ต้องการเปิด database ผ่าน Tunnel
+
+### ข้อควรระวัง/การตรวจครั้งหน้า
+
+- อย่าส่งหรือบันทึก `CF_API_TOKEN` ใน log, terminal transcript หรือ issue; log เฉพาะ ID length/UUID validity และ HTTP status
+- เมื่อเจอ 404 ให้ตรวจตามลำดับ: DNS record/Proxy → ingress จาก Cloudflare API → local `/etc/cloudflared/config.yml` → `systemctl status cloudflared`/journal → local origin port
+- แยกการทดสอบตามชนิดบริการ: HTTP(S) routes ทดสอบด้วย browser/curl; SSH/TCP/database ต้องใช้ client/protocol ที่ตรงกัน
