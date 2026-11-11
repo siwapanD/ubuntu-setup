@@ -239,37 +239,20 @@ cloudflared tunnel route dns "$TUNNEL_ID" "$NEW_HOST" && \
     echo "  $NEW_HOST ✓" || \
     echo "  [WARN] DNS อาจมีอยู่แล้ว"
 
-# systemd service uses local config.yml; sync the API ingress there too.
+# systemd service uses local config.yml. Reconcile the full API ingress so one rerun
+# repairs every hostname previously added through this script, not just the current host.
 LOCAL_CONFIG=/etc/cloudflared/config.yml
 LOCAL_CONFIG_TMP=$(mktemp)
-if ! sudo awk -v host="$NEW_HOST" -v service="$SERVICE_URL" '
-    /^ingress:/ { in_ingress = 1; print; next }
-    in_ingress && /^  - hostname:/ {
-        host_line = $0
-        block = host_line
-        if (getline > 0) block = block "\n" $0
-        if (host_line ~ "hostname: " host "$") {
-            print "  - hostname: " host
-            print "    service: " service
-            found = 1
-        } else {
-            printf "%s\n", block
-        }
-        next
-    }
-    in_ingress && /^  - service: http_status:404/ && !found {
-        print "  - hostname: " host
-        print "    service: " service
-        print
-        found = 1
-        next
-    }
-    { print }
-    END { if (!found) exit 2 }
-' "$LOCAL_CONFIG" > "$LOCAL_CONFIG_TMP"; then
+if ! sudo awk '/^ingress:/ { exit } { print }' "$LOCAL_CONFIG" > "$LOCAL_CONFIG_TMP"; then
     rm -f "$LOCAL_CONFIG_TMP"
-    echo "[ERROR] เพิ่ม route ลง local cloudflared config ไม่ได้"
-    echo "        Cloudflare API/DNS อาจถูกตั้งแล้ว แต่ยังไม่ได้เปลี่ยน local config; ตรวจ config.yml แล้วรันซ้ำ"
+    echo "[ERROR] อ่านส่วน tunnel/credentials จาก local config ไม่ได้"
+    exit 1
+fi
+printf '\ningress:\n' >> "$LOCAL_CONFIG_TMP"
+if ! jq -r '.[] | if .hostname then "  - hostname: " + .hostname + "\n    service: " + .service else "  - service: " + .service end' \
+    <<< "$FINAL_INGRESS" >> "$LOCAL_CONFIG_TMP"; then
+    rm -f "$LOCAL_CONFIG_TMP"
+    echo "[ERROR] สร้าง ingress config จาก Cloudflare API ไม่สำเร็จ"
     exit 1
 fi
 if ! cloudflared tunnel --config "$LOCAL_CONFIG_TMP" ingress validate; then
